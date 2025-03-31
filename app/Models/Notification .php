@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Booking extends Model
+class Notification extends Model
 {
     use HasFactory;
 
@@ -16,11 +16,11 @@ class Booking extends Model
      */
     protected $fillable = [
         'user_id',
-        'date',
-        'time',
-        'guests',
-        'special_requests',
-        'status'
+        'title',
+        'message',
+        'type',
+        'reference_id',
+        'is_read'
     ];
 
     /**
@@ -29,12 +29,12 @@ class Booking extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'date' => 'date',
-        'guests' => 'integer'
+        'is_read' => 'boolean',
+        'reference_id' => 'integer'
     ];
 
     /**
-     * Get the user that owns the booking.
+     * Get the user that owns the notification.
      */
     public function user()
     {

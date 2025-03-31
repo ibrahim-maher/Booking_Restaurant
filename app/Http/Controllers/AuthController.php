@@ -12,21 +12,12 @@ use Illuminate\Support\Str;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Validation\Rules\Password as PasswordRule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
-
 
 class AuthController extends Controller
 {
-    /**
-     * Register a new user
-     * 
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function register(Request $request)
     {
-        // Validate the incoming request with stronger password rules
         $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
@@ -48,22 +39,18 @@ class AuthController extends Controller
         }
 
         try {
-            // Create user with default role
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'role' => 'user',
-                'email_verified_at' => null, // Will require verification if enabled
+                'email_verified_at' => null,
             ]);
 
-            // Fire registered event (for email verification if enabled)
             event(new Registered($user));
             
-            // Create token for API usage
             $token = $user->createToken('auth_token')->plainTextToken;
 
-            // Return user data and token
             return response()->json([
                 'message' => 'Registration successful',
                 'user' => [
@@ -79,7 +66,6 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             Log::error('Registration failed: ' . $e->getMessage());
             
-            // Return appropriate error message
             return response()->json([
                 'message' => 'Registration failed',
                 'error' => config('app.debug') ? $e->getMessage() : 'An error occurred during registration',
@@ -87,12 +73,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Login user and create token
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function login(Request $request)
     {
         try {
@@ -108,7 +88,6 @@ class AuthController extends Controller
                 ], 422);
             }
 
-            // Attempt to authenticate the user
             if (!Auth::attempt($request->only('email', 'password'))) {
                 return response()->json([
                     'message' => 'Invalid credentials',
@@ -118,7 +97,6 @@ class AuthController extends Controller
 
             $user = User::where('email', $request->email)->firstOrFail();
             
-            // Create new token
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
@@ -141,22 +119,13 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Logout user (revoke token)
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function logout(Request $request)
     {
         try {
-            // For token-based authentication (Sanctum)
             if ($request->user()) {
-                // Revoke the token that was used to authenticate the current request
-                $request->user()->currentAccessToken()->delete();
+                $request->user()->tokens()->delete();
             }
 
-            // For session-based authentication
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
@@ -174,25 +143,17 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Delete user account
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function destroy(Request $request)
     {
         try {
             $user = $request->user();
 
-            // Prevent admins from being deleted through this endpoint
             if ($user->role === 'admin') {
                 return response()->json([
                     'message' => 'Admin accounts cannot be deleted through this endpoint',
                 ], 403);
             }
 
-            // Require password confirmation for account deletion
             $validator = Validator::make($request->all(), [
                 'password' => 'required|string',
             ]);
@@ -210,15 +171,12 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Revoke all tokens
             $user->tokens()->delete();
 
-            // For session-based authentication
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
             
-            // Delete the user
             $user->delete();
 
             return response()->json([
@@ -234,12 +192,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Request password reset link
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function forgotPassword(Request $request)
     {
         try {
@@ -271,12 +223,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Reset password
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function resetPassword(Request $request)
     {
         try {
@@ -326,12 +272,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Get authenticated user details
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function me(Request $request)
     {
         try {
@@ -357,12 +297,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Update user profile
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function updateProfile(Request $request)
     {
         try {
@@ -391,7 +325,6 @@ class AuthController extends Controller
 
             $validated = $validator->validated();
 
-            // Verify current password if trying to change password
             if (isset($validated['current_password']) && isset($validated['password'])) {
                 if (!Hash::check($validated['current_password'], $user->password)) {
                     return response()->json([
@@ -400,20 +333,17 @@ class AuthController extends Controller
                 }
             }
 
-            // Update password if provided
             if (isset($validated['password'])) {
                 $user->password = Hash::make($validated['password']);
             }
 
-            // Update name if provided
             if (isset($validated['name'])) {
                 $user->name = $validated['name'];
             }
 
-            // Update email if provided
             if (isset($validated['email']) && $validated['email'] !== $user->email) {
                 $user->email = $validated['email'];
-                $user->email_verified_at = null; // Require re-verification
+                $user->email_verified_at = null;
             }
 
             $user->save();
@@ -438,12 +368,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Check if email exists (for password recovery)
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function checkEmail(Request $request)
     {
         try {
@@ -473,12 +397,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Verify email with token
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function verifyEmail(Request $request)
     {
         try {
@@ -496,14 +414,12 @@ class AuthController extends Controller
 
             $user = User::findOrFail($request->id);
 
-            // Check if already verified
             if (!is_null($user->email_verified_at)) {
                 return response()->json([
                     'message' => 'Email already verified',
                 ], 200);
             }
 
-            // Verify the hash (you may need to adjust this based on your verification logic)
             if (!hash_equals(sha1($user->getEmailForVerification()), $request->hash)) {
                 return response()->json([
                     'message' => 'Invalid verification link',
@@ -527,12 +443,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Resend email verification link
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function resendVerification(Request $request)
     {
         try {
